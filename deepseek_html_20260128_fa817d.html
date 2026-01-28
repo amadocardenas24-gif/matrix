@@ -1,0 +1,1210 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Predicción de Resultados</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/luxon@3.4.0/build/global/luxon.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mathjs@11.8.0/lib/browser/math.js"></script>
+    <style>
+        :root {
+            --local-win: #10b981;    /* Victoria local */
+            --draw: #f59e0b;         /* Empate */
+            --visitor-win: #ef4444;  /* Victoria visita */
+            --local-color: #3b82f6;  /* Equipo local */
+            --visitor-color: #8b5cf6;/* Equipo visita */
+            --phi: #C5A572;          /* Proporción áurea */
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: #f8fafc;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 2000px;
+            margin: 0 auto;
+        }
+
+        /* HEADER */
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 30px;
+            background: rgba(30, 41, 59, 0.9);
+            border-radius: 20px;
+            border: 3px solid var(--phi);
+        }
+
+        .header h1 {
+            font-size: 2.8rem;
+            margin-bottom: 15px;
+            background: linear-gradient(45deg, var(--local-color), var(--draw), var(--visitor-color));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .header h2 {
+            font-size: 1.4rem;
+            color: #94a3b8;
+        }
+
+        /* STATS BAR */
+        .stats-bar {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+
+        .stat-item {
+            background: rgba(59, 130, 246, 0.2);
+            padding: 10px 20px;
+            border-radius: 10px;
+            border: 1px solid #3b82f6;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #60a5fa;
+        }
+
+        /* PREDICTION CONTROLS */
+        .prediction-controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .control-card {
+            background: rgba(30, 41, 59, 0.9);
+            border-radius: 15px;
+            padding: 20px;
+            border: 2px solid;
+        }
+
+        .control-card h3 {
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid;
+        }
+
+        .weight-control {
+            margin-bottom: 15px;
+        }
+
+        .weight-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+
+        .weight-name {
+            color: #94a3b8;
+        }
+
+        .weight-value {
+            color: #60a5fa;
+            font-weight: bold;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            height: 8px;
+            border-radius: 4px;
+            background: #334155;
+            outline: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #3b82f6;
+            cursor: pointer;
+        }
+
+        .date-selector {
+            width: 100%;
+            padding: 12px;
+            background: #1e293b;
+            border: 2px solid #3b82f6;
+            border-radius: 8px;
+            color: white;
+            font-size: 1rem;
+            margin-bottom: 15px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+            color: white;
+            border: none;
+            padding: 15px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 600;
+            width: 100%;
+            transition: all 0.3s;
+        }
+
+        .btn-primary:hover {
+            background: linear-gradient(135deg, #60a5fa, #3b82f6);
+            transform: translateY(-2px);
+        }
+
+        /* PREDICTION RESULTS */
+        .predictions-container {
+            margin-bottom: 40px;
+        }
+
+        .prediction-card {
+            background: rgba(30, 41, 59, 0.9);
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 20px;
+            border: 2px solid;
+            transition: transform 0.3s;
+        }
+
+        .prediction-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .prediction-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .game-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .game-number {
+            background: var(--phi);
+            color: black;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 1.2rem;
+        }
+
+        .match-teams {
+            display: flex;
+            align-items: center;
+            gap: 30px;
+        }
+
+        .team {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 20px;
+            border-radius: 10px;
+            font-weight: bold;
+        }
+
+        .local-team {
+            background: rgba(59, 130, 246, 0.2);
+            border: 2px solid var(--local-color);
+        }
+
+        .visitor-team {
+            background: rgba(139, 92, 246, 0.2);
+            border: 2px solid var(--visitor-color);
+        }
+
+        .vs {
+            font-size: 1.5rem;
+            color: #94a3b8;
+            font-weight: bold;
+        }
+
+        /* PREDICTION RESULT */
+        .prediction-result {
+            text-align: center;
+            margin: 20px 0;
+            padding: 20px;
+            border-radius: 10px;
+            font-size: 1.5rem;
+            font-weight: bold;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .pred-local-win {
+            background: rgba(16, 185, 129, 0.2);
+            border: 3px solid var(--local-win);
+            color: var(--local-win);
+        }
+
+        .pred-draw {
+            background: rgba(245, 158, 11, 0.2);
+            border: 3px solid var(--draw);
+            color: var(--draw);
+        }
+
+        .pred-visitor-win {
+            background: rgba(239, 68, 68, 0.2);
+            border: 3px solid var(--visitor-win);
+            color: var(--visitor-win);
+        }
+
+        .confidence-badge {
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 1rem;
+            font-weight: bold;
+        }
+
+        .high-confidence {
+            background: rgba(16, 185, 129, 0.3);
+            color: #10b981;
+        }
+
+        .medium-confidence {
+            background: rgba(245, 158, 11, 0.3);
+            color: #f59e0b;
+        }
+
+        .low-confidence {
+            background: rgba(239, 68, 68, 0.3);
+            color: #ef4444;
+        }
+
+        /* FACTORS ANALYSIS */
+        .factors-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .factor-item {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .factor-name {
+            font-size: 0.9rem;
+            color: #94a3b8;
+            margin-bottom: 5px;
+        }
+
+        .factor-value {
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+
+        .positive-factor {
+            color: #10b981;
+        }
+
+        .neutral-factor {
+            color: #f59e0b;
+        }
+
+        .negative-factor {
+            color: #ef4444;
+        }
+
+        /* SCORE BREAKDOWN */
+        .score-breakdown {
+            margin-top: 20px;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+        }
+
+        .score-bars {
+            display: flex;
+            gap: 10px;
+            height: 30px;
+            margin-top: 10px;
+        }
+
+        .local-bar {
+            background: var(--local-color);
+            border-radius: 5px;
+            transition: width 0.5s;
+        }
+
+        .draw-bar {
+            background: var(--draw);
+            border-radius: 5px;
+            transition: width 0.5s;
+        }
+
+        .visitor-bar {
+            background: var(--visitor-color);
+            border-radius: 5px;
+            transition: width 0.5s;
+        }
+
+        /* DETAILED ANALYSIS */
+        .detailed-analysis {
+            background: rgba(30, 41, 59, 0.9);
+            border-radius: 15px;
+            padding: 25px;
+            margin-top: 30px;
+            border: 2px solid var(--phi);
+        }
+
+        .analysis-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #334155;
+            padding-bottom: 10px;
+        }
+
+        .tab-btn {
+            padding: 10px 20px;
+            background: #334155;
+            border: none;
+            border-radius: 8px;
+            color: white;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .tab-btn.active {
+            background: #3b82f6;
+            font-weight: bold;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* STATISTICS */
+        .stats-summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #60a5fa;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>⚽ SISTEMA DE PREDICCIÓN DE RESULTADOS</h1>
+            <h2>Análisis Gann + Rodin + Astrología + Biorritmos</h2>
+            <div class="stats-bar">
+                <div class="stat-item">
+                    <div>📊 Partidos Analizados</div>
+                    <div class="stat-value" id="totalMatches">0</div>
+                </div>
+                <div class="stat-item">
+                    <div>🎯 Precisión Estimada</div>
+                    <div class="stat-value" id="accuracyRate">0%</div>
+                </div>
+                <div class="stat-item">
+                    <div>📅 Fecha Análisis</div>
+                    <div class="stat-value" id="analysisDate">-</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- CONTROLES DE PREDICCIÓN -->
+        <div class="prediction-controls">
+            <div class="control-card" style="border-color: var(--phi);">
+                <h3 style="color: var(--phi);">📊 PESOS DE FACTORES</h3>
+                <div class="weight-control">
+                    <div class="weight-label">
+                        <span class="weight-name">Biorritmos Físicos</span>
+                        <span class="weight-value" id="weightPhysical">30%</span>
+                    </div>
+                    <input type="range" id="sliderPhysical" min="0" max="100" value="30" oninput="updateWeight('Physical', this.value)">
+                </div>
+                <div class="weight-control">
+                    <div class="weight-label">
+                        <span class="weight-name">Números Rodin</span>
+                        <span class="weight-value" id="weightRodin">25%</span>
+                    </div>
+                    <input type="range" id="sliderRodin" min="0" max="100" value="25" oninput="updateWeight('Rodin', this.value)">
+                </div>
+                <div class="weight-control">
+                    <div class="weight-label">
+                        <span class="weight-name">Compatibilidad Astral</span>
+                        <span class="weight-value" id="weightAstral">20%</span>
+                    </div>
+                    <input type="range" id="sliderAstral" min="0" max="100" value="20" oninput="updateWeight('Astral', this.value)">
+                </div>
+                <div class="weight-control">
+                    <div class="weight-label">
+                        <span class="weight-name">Coeficiente Phi</span>
+                        <span class="weight-value" id="weightPhi">15%</span>
+                    </div>
+                    <input type="range" id="sliderPhi" min="0" max="100" value="15" oninput="updateWeight('Phi', this.value)">
+                </div>
+                <div class="weight-control">
+                    <div class="weight-label">
+                        <span class="weight-name">Factor Campo</span>
+                        <span class="weight-value" id="weightField">10%</span>
+                    </div>
+                    <input type="range" id="sliderField" min="0" max="100" value="10" oninput="updateWeight('Field', this.value)">
+                </div>
+            </div>
+
+            <div class="control-card" style="border-color: #3b82f6;">
+                <h3 style="color: #3b82f6;">⚙️ CONFIGURACIÓN</h3>
+                <input type="date" class="date-selector" id="matchDate" value="">
+                <input type="number" class="date-selector" id="hour" min="0" max="23" value="16" placeholder="Hora del partido (0-23)">
+                <input type="number" class="date-selector" id="minute" min="0" max="59" value="0" placeholder="Minuto (0-59)">
+                <button class="btn-primary" onclick="runAllPredictions()">
+                    🎯 EJECUTAR PREDICCIONES
+                </button>
+                <button class="btn-primary" onclick="downloadPredictions()" style="margin-top: 10px; background: linear-gradient(135deg, #10b981, #059669);">
+                    📥 DESCARGAR PREDICCIONES
+                </button>
+            </div>
+        </div>
+
+        <!-- RESULTADOS DE PREDICCIÓN -->
+        <div class="predictions-container" id="predictionsContainer">
+            <!-- Las predicciones se generarán aquí -->
+        </div>
+
+        <!-- ANÁLISIS DETALLADO -->
+        <div class="detailed-analysis">
+            <div class="analysis-tabs">
+                <button class="tab-btn active" onclick="showTab('stats')">📊 ESTADÍSTICAS</button>
+                <button class="tab-btn" onclick="showTab('factors')">📈 FACTORES</button>
+                <button class="tab-btn" onclick="showTab('methodology')">📚 METODOLOGÍA</button>
+            </div>
+
+            <div id="stats-tab" class="tab-content active">
+                <h3>Resumen Estadístico</h3>
+                <div class="stats-summary">
+                    <div class="stat-card">
+                        <div>Victorias Locales</div>
+                        <div class="stat-number" id="localWins">0</div>
+                        <div id="localPercent">0%</div>
+                    </div>
+                    <div class="stat-card">
+                        <div>Empates</div>
+                        <div class="stat-number" id="draws">0</div>
+                        <div id="drawPercent">0%</div>
+                    </div>
+                    <div class="stat-card">
+                        <div>Victorias Visitantes</div>
+                        <div class="stat-number" id="visitorWins">0</div>
+                        <div id="visitorPercent">0%</div>
+                    </div>
+                    <div class="stat-card">
+                        <div>Confianza Promedio</div>
+                        <div class="stat-number" id="avgConfidence">0%</div>
+                        <div>Nivel de certeza</div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="factors-tab" class="tab-content">
+                <h3>Factores Determinantes</h3>
+                <p>El sistema analiza 5 factores principales:</p>
+                <ol style="margin-left: 20px; margin-top: 10px;">
+                    <li><strong>Biorritmos Físicos:</strong> Energía y condición física de los jugadores</li>
+                    <li><strong>Números Rodin:</strong> Pertenencia al Circuito (1-2-4-8-7-5) o Triángulo (3-6-9)</li>
+                    <li><strong>Compatibilidad Astral:</strong> Armonía entre signos zodiacales del equipo</li>
+                    <li><strong>Coeficiente Phi:</strong> Proporción áurea y fractales (Dan Winter)</li>
+                    <li><strong>Factor Campo:</strong> Condiciones del terreno de juego</li>
+                </ol>
+            </div>
+
+            <div id="methodology-tab" class="tab-content">
+                <h3>Metodología Científica</h3>
+                <p>Este sistema integra:</p>
+                <ul style="margin-left: 20px; margin-top: 10px;">
+                    <li><strong>Gann:</strong> Cuadrado de 9 y ángulos críticos en el tiempo</li>
+                    <li><strong>Rodin:</strong> Matemática vórtica y base 9</li>
+                    <li><strong>Astrología:</strong> Posiciones planetarias y signos solares</li>
+                    <li><strong>Biorritmos:</strong> Ciclos físicos, emocionales e intelectuales</li>
+                    <li><strong>Dan Winter:</strong> Geometría sagrada y proporción áurea</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // DATOS CSV CORREGIDOS
+        const correctedCSV = `Juego,Equipo,Jugador,Nacimiento,Perfil,Campo
+1,Flamengo,Rossi,1995-08-21,Portero,Pesado
+1,Flamengo,David Luiz,1987-04-22,Veterano,Pesado
+1,Flamengo,Arrascaeta,1994-06-01,Mago,Pesado
+1,Flamengo,Gerson,1997-05-20,Motor,Pesado
+1,Flamengo,Bruno Henrique,1990-12-30,Veterano,Pesado
+1,Flamengo,Pedro,1997-06-20,Tanque,Pesado
+1,Corinthians,Hugo Souza,1999-01-31,Portero,Pesado
+1,Corinthians,Fagner,1989-06-11,Veterano,Pesado
+1,Corinthians,Andre Ramalho,1992-02-16,Lider,Pesado
+1,Corinthians,Rodrigo Garro,1998-01-04,Cerebro,Pesado
+1,Corinthians,Memphis Depay,1994-02-13,Elite,Pesado
+1,Corinthians,Yuri Alberto,2001-03-18,Goleador,Pesado
+2,Atletico-GO,Ronaldo,1996-08-22,Portero,Pesado
+2,Atletico-GO,Alix Vinicius,1999-11-06,Pilar,Pesado
+2,Atletico-GO,Baralhas,1998-10-10,Fisico,Pesado
+2,Atletico-GO,Shaylon,1997-04-27,Cerebro,Pesado
+2,Atletico-GO,Luiz Fernando,1996-10-16,Goleador,Pesado
+2,Atletico-GO,Vagner Love,1984-06-11,Leyenda,Pesado
+2,CRAC,Cleriston,1992-06-04,Portero,Pesado
+2,CRAC,Willian Goiano,1989-05-18,Veterano,Pesado
+2,CRAC,Marcio Luiz,1990-02-14,Defensa,Pesado
+2,CRAC,Gui Campana,1995-02-22,M.Poder,Pesado
+2,CRAC,Jeremias,1997-09-21,Extremo,Pesado
+2,CRAC,Allan Paulista,1999-04-08,Goleador,Pesado
+3,Caxias,Thiago Coelho,1995-05-26,Portero,Pesado
+3,Caxias,Dirceu,1988-01-05,Veterano,Pesado
+3,Caxias,Dudu Mandai,1993-01-26,Experiencia,Pesado
+3,Caxias,Tomas Bastos,1992-04-30,Cerebro,Pesado
+3,Caxias,Alvaro,1997-02-27,Delantero,Pesado
+3,Caxias,Gabriel Silva,2002-03-22,Joven,Pesado
+3,Internacional,Rochet,1993-03-23,Portero,Pesado
+3,Internacional,Vitao,2000-02-02,Pilar,Pesado
+3,Internacional,Fernando,1987-07-25,Veterano,Pesado
+3,Internacional,Alan Patrick,1991-05-13,Cerebro,Pesado
+3,Internacional,Borre,1995-09-15,Elite,Pesado
+3,Internacional,Valencia,1989-11-04,Veterano,Pesado
+4,Gremio,Marchesin,1988-03-16,Portero,Pesado
+4,Gremio,Geromel,1985-09-21,Leyenda,Pesado
+4,Gremio,Villasanti,1997-01-24,M.Poder,Pesado
+4,Gremio,Cristaldo,1996-03-05,Cerebro,Pesado
+4,Gremio,Pavon,1996-01-21,Extremo,Pesado
+4,Gremio,Braithwaite,1991-06-05,Elite,Pesado
+4,Juventude,Gabriel,1992-09-27,Portero,Pesado
+4,Juventude,Danilo Boza,1991-04-19,Defensa,Pesado
+4,Juventude,Alan Ruschel,1989-08-23,Lider,Pesado
+4,Juventude,Jadson,1991-08-30,Volante,Pesado
+4,Juventude,Nene,1981-07-19,Abuelo-Oro,Pesado
+4,Juventude,Gilberto,1989-06-05,Veterano,Pesado
+5,Sao Jose-RS,Fabio Rampi,1979-05-11,Portero-Abuelo,Pesado
+5,Sao Jose-RS,Fred,1986-01-15,Veterano-Duro,Pesado
+5,Sao Jose-RS,Tiago Pedra,1987-02-14,Veterano,Pesado
+5,Sao Jose-RS,Carrilho,1995-04-12,Motor,Pesado
+5,Sao Jose-RS,Alessandro Vinicius,1999-02-15,Extremo,Pesado
+5,Sao Jose-RS,Renê,1992-05-23,Delantero,Pesado
+5,Ypiranga-RS,Alexander,1999-03-31,Portero,Pesado
+5,Ypiranga-RS,Willian Gomes,1986-05-12,Veterano-Lider,Pesado
+5,Ypiranga-RS,Anderson Uchoa,1991-02-04,Experiencia,Pesado
+5,Ypiranga-RS,Alisson Taddei,1997-12-18,Cerebro,Pesado
+5,Ypiranga-RS,Fabricio,1998-03-28,Extremo,Pesado
+5,Ypiranga-RS,Edson Carius,1988-10-12,Veterano-Tanque,Pesado
+7,Iguatu,Geferson,1992-06-10,Portero,Pesado
+7,Iguatu,Julio Ferrari,1989-05-15,Veterano-Duro,Pesado
+7,Iguatu,Max Oliveira,1990-02-09,Defensa,Pesado
+7,Iguatu,Guidio,1987-08-02,Veterano-Ancla,Pesado
+7,Iguatu,Diego Viana,1995-05-05,Cerebro,Pesado
+7,Iguatu,Otacilio Marcos,1996-04-05,Goleador,Pesado
+9,Sao Bernardo,Alex Alves,1986-11-08,Portero-V,Pesado
+9,Sao Bernardo,Helder,1988-04-13,Veterano,Pesado
+9,Sao Bernardo,Rodrigo Souza,1987-10-27,Veterano,Pesado
+9,Sao Bernardo,Romisson,1996-10-14,Motor,Pesado
+9,Sao Bernardo,Lucas Tocantins,1994-07-25,Extremo,Pesado
+9,Sao Bernardo,Silvinho,1990-07-01,Veterano-Veloz,Pesado
+10,Horizonte,Marcelo,1989-04-12,Portero-V,Pesado
+10,Horizonte,Zezinho,1992-03-14,Veterano,Pesado
+10,Horizonte,Jeferson,1995-06-02,Defensa,Pesado
+10,Horizonte,Dodo,1998-05-15,Motor,Pesado
+10,Horizonte,Maranhão,1990-12-25,Veterano-Ext,Pesado
+10,Horizonte,Nilson,1991-04-06,Delantero,Pesado
+11,Novorizontino,Jordi,1993-09-03,Portero,Pesado
+11,Novorizontino,Rafael Donato,1989-01-25,Veterano-Lider,Pesado
+11,Novorizontino,Willian Farias,1989-06-06,Veterano-Ancla,Pesado
+11,Novorizontino,Marlon,1994-11-20,Motor,Pesado
+11,Novorizontino,Rodolfo,1992-05-20,Goleador,Pesado
+11,Novorizontino,Neto Pessoa,1994-05-16,Fuerza,Pesado
+12,Vila Nova,Denis Junior,1999-03-20,Portero,Pesado
+12,Vila Nova,Ralf,1984-06-09,Viejito-Duro,Pesado
+12,Vila Nova,Quintero,1995-03-23,Defensa,Pesado
+12,Vila Nova,Elias,1999-11-13,Lateral,Pesado
+12,Vila Nova,Alesson,1999-02-16,Elite,Pesado
+12,Vila Nova,Henrique Almeida,1991-05-27,Veterano-Goleador,Pesado
+14,Botafogo-SP,Victor Souza,1992-08-18,Portero,Pesado
+14,Botafogo-SP,Fabio Sanches,1991-01-06,Veterano-Def,Pesado
+14,Botafogo-SP,Wallison,1997-09-23,Volante,Pesado
+14,Botafogo-SP,Gustavo Bochecha,1996-06-08,Cerebro,Pesado
+14,Botafogo-SP,Douglas Baggio,1995-02-02,Mes_Poder,Pesado
+14,Botafogo-SP,Alex Sandro,1995-08-20,Goleador,Pesado`;
+
+        const DateTime = luxon.DateTime;
+        let allPlayers = [];
+        let games = {};
+        let predictions = [];
+
+        // PESOS DE FACTORES (configurables)
+        let weights = {
+            physical: 30,   // Biorritmos físicos
+            rodin: 25,      // Números Rodin
+            astral: 20,     // Compatibilidad astral
+            phi: 15,        // Coeficiente Phi
+            field: 10       // Factor campo
+        };
+
+        // CONFIGURACIÓN INICIAL
+        document.getElementById('matchDate').value = DateTime.now().toISODate();
+        document.getElementById('analysisDate').textContent = DateTime.now().toLocaleString(DateTime.DATE_FULL);
+
+        // FUNCIÓN PARA ACTUALIZAR PESOS
+        function updateWeight(type, value) {
+            weights[type.toLowerCase()] = parseInt(value);
+            document.getElementById(`weight${type}`).textContent = `${value}%`;
+        }
+
+        // FUNCIÓN PARA CARGAR DATOS
+        function loadData() {
+            console.log("Cargando datos del CSV...");
+            
+            allPlayers = [];
+            games = {};
+            
+            const results = Papa.parse(correctedCSV, {
+                header: true,
+                skipEmptyLines: true,
+                transform: function(value) {
+                    return value ? value.trim() : value;
+                }
+            });
+            
+            results.data.forEach((row, index) => {
+                if (row.Jugador && row.Nacimiento) {
+                    const player = {
+                        id: index,
+                        juego: parseInt(row.Juego) || 0,
+                        equipo: row.Equipo ? row.Equipo.trim() : 'Desconocido',
+                        nombre: row.Jugador.trim(),
+                        nacimiento: row.Nacimiento.trim(),
+                        perfil: row.Perfil ? row.Perfil.trim() : 'Sin perfil',
+                        campo: row.Campo ? row.Campo.trim() : 'Pesado'
+                    };
+                    
+                    allPlayers.push(player);
+                    
+                    if (!games[player.juego]) {
+                        games[player.juego] = [];
+                    }
+                    games[player.juego].push(player);
+                }
+            });
+            
+            console.log(`Datos cargados: ${allPlayers.length} jugadores, ${Object.keys(games).length} partidos`);
+            document.getElementById('totalMatches').textContent = Object.keys(games).length;
+        }
+
+        // FUNCIÓN PARA CALCULAR BIORRITMOS
+        function calculateBiorhythms(birthDate, analysisDate) {
+            const birth = DateTime.fromISO(birthDate);
+            const analysis = DateTime.fromISO(analysisDate);
+            const daysLived = analysis.diff(birth, 'days').days;
+            
+            return {
+                physical: Math.sin(2 * Math.PI * daysLived / 23),
+                emotional: Math.sin(2 * Math.PI * daysLived / 28),
+                intellectual: Math.sin(2 * Math.PI * daysLived / 33)
+            };
+        }
+
+        // FUNCIÓN PARA CALCULAR NÚMERO RODIN
+        function calculateRodinNumber(birthDate) {
+            const date = DateTime.fromISO(birthDate);
+            let sum = date.day + date.month + date.year;
+            
+            while (sum > 9) {
+                sum = sum.toString().split('').reduce((a, b) => parseInt(a) + parseInt(b), 0);
+            }
+            
+            return sum;
+        }
+
+        // FUNCIÓN PARA DETERMINAR CLASE RODIN
+        function getRodinClass(number) {
+            const circuitNumbers = [1, 2, 4, 5, 7, 8];
+            return circuitNumbers.includes(number) ? 'circuit' : 'triangle';
+        }
+
+        // FUNCIÓN PARA CALCULAR SIGNO ZODIACAL
+        function calculateZodiacSign(birthDate) {
+            const date = DateTime.fromISO(birthDate);
+            const day = date.day;
+            const month = date.month;
+            
+            if ((month === 1 && day >= 20) || (month === 2 && day <= 18)) return 'Aquarius';
+            if ((month === 2 && day >= 19) || (month === 3 && day <= 20)) return 'Pisces';
+            if ((month === 3 && day >= 21) || (month === 4 && day <= 19)) return 'Aries';
+            if ((month === 4 && day >= 20) || (month === 5 && day <= 20)) return 'Taurus';
+            if ((month === 5 && day >= 21) || (month === 6 && day <= 20)) return 'Gemini';
+            if ((month === 6 && day >= 21) || (month === 7 && day <= 22)) return 'Cancer';
+            if ((month === 7 && day >= 23) || (month === 8 && day <= 22)) return 'Leo';
+            if ((month === 8 && day >= 23) || (month === 9 && day <= 22)) return 'Virgo';
+            if ((month === 9 && day >= 23) || (month === 10 && day <= 22)) return 'Libra';
+            if ((month === 10 && day >= 23) || (month === 11 && day <= 21)) return 'Scorpio';
+            if ((month === 11 && day >= 22) || (month === 12 && day <= 21)) return 'Sagittarius';
+            return 'Capricorn';
+        }
+
+        // FUNCIÓN PARA CALCULAR COMPATIBILIDAD ASTRAL
+        function getAstralCompatibility(sign1, sign2) {
+            const elementGroups = {
+                fire: ['Aries', 'Leo', 'Sagittarius'],
+                earth: ['Taurus', 'Virgo', 'Capricorn'],
+                air: ['Gemini', 'Libra', 'Aquarius'],
+                water: ['Cancer', 'Scorpio', 'Pisces']
+            };
+            
+            let element1 = '', element2 = '';
+            
+            for (const [element, signs] of Object.entries(elementGroups)) {
+                if (signs.includes(sign1)) element1 = element;
+                if (signs.includes(sign2)) element2 = element;
+            }
+            
+            // Mismos elementos = alta compatibilidad
+            if (element1 === element2) return 1.0;
+            
+            // Elementos compatibles
+            const compatiblePairs = [['fire', 'air'], ['earth', 'water'], ['air', 'fire'], ['water', 'earth']];
+            if (compatiblePairs.some(pair => pair[0] === element1 && pair[1] === element2)) return 0.7;
+            
+            // Elementos no compatibles
+            return 0.3;
+        }
+
+        // FUNCIÓN PARA CALCULAR COEFICIENTE PHI (Dan Winter)
+        function calculatePhiCoefficient(birthDate, analysisDate) {
+            const birth = DateTime.fromISO(birthDate);
+            const analysis = DateTime.fromISO(analysisDate);
+            const daysLived = analysis.diff(birth, 'days').days;
+            
+            // Usar la proporción áurea (1.618) y posición en secuencia de Fibonacci
+            const fibPosition = daysLived % 12;
+            const fibonacci = [0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89];
+            const fibValue = fibonacci[fibPosition] || 1;
+            
+            return (fibValue * 1.618) / 100;
+        }
+
+        // FUNCIÓN PARA ANALIZAR UN EQUIPO
+        function analyzeTeam(teamPlayers, matchDateTime) {
+            if (teamPlayers.length === 0) return null;
+            
+            // Calcular promedios
+            let totalPhysical = 0;
+            let rodinScore = 0;
+            let phiScore = 0;
+            const signs = [];
+            
+            teamPlayers.forEach(player => {
+                // Biorritmos físicos
+                const biorhythms = calculateBiorhythms(player.nacimiento, matchDateTime.toISODate());
+                totalPhysical += biorhythms.physical;
+                
+                // Puntaje Rodin (triángulo = mejor)
+                const rodinNumber = calculateRodinNumber(player.nacimiento);
+                const rodinClass = getRodinClass(rodinNumber);
+                rodinScore += rodinClass === 'triangle' ? 1.0 : 0.5;
+                
+                // Coeficiente Phi
+                phiScore += calculatePhiCoefficient(player.nacimiento, matchDateTime.toISODate());
+                
+                // Signo zodiacal
+                signs.push(calculateZodiacSign(player.nacimiento));
+            });
+            
+            // Calcular compatibilidad astral dentro del equipo
+            let astralCompatibility = 0;
+            if (signs.length > 1) {
+                let totalPairs = 0;
+                let compatibilitySum = 0;
+                
+                for (let i = 0; i < signs.length; i++) {
+                    for (let j = i + 1; j < signs.length; j++) {
+                        compatibilitySum += getAstralCompatibility(signs[i], signs[j]);
+                        totalPairs++;
+                    }
+                }
+                
+                astralCompatibility = totalPairs > 0 ? compatibilitySum / totalPairs : 0.5;
+            } else {
+                astralCompatibility = 0.5;
+            }
+            
+            // Factor campo (pesado = neutral)
+            const fieldFactor = teamPlayers[0].campo === 'Pesado' ? 0.5 : 1.0;
+            
+            return {
+                teamName: teamPlayers[0].equipo,
+                playerCount: teamPlayers.length,
+                avgPhysical: totalPhysical / teamPlayers.length,
+                avgRodin: rodinScore / teamPlayers.length,
+                avgAstral: astralCompatibility,
+                avgPhi: phiScore / teamPlayers.length,
+                fieldFactor: fieldFactor,
+                signs: signs
+            };
+        }
+
+        // FUNCIÓN PARA PREDECIR RESULTADO
+        function predictMatch(localAnalysis, visitorAnalysis, matchDateTime) {
+            if (!localAnalysis || !visitorAnalysis) return null;
+            
+            // Aplicar pesos a cada factor
+            const localScore = 
+                (localAnalysis.avgPhysical * weights.physical / 100) +
+                (localAnalysis.avgRodin * weights.rodin / 100) +
+                (localAnalysis.avgAstral * weights.astral / 100) +
+                (localAnalysis.avgPhi * weights.phi / 100) +
+                (localAnalysis.fieldFactor * weights.field / 100);
+            
+            const visitorScore = 
+                (visitorAnalysis.avgPhysical * weights.physical / 100) +
+                (visitorAnalysis.avgRodin * weights.rodin / 100) +
+                (visitorAnalysis.avgAstral * weights.astral / 100) +
+                (visitorAnalysis.avgPhi * weights.phi / 100) +
+                (visitorAnalysis.fieldFactor * weights.field / 100);
+            
+            // Factor Gann: hora del partido
+            const hour = matchDateTime.hour;
+            const gannFactor = Math.sin(2 * Math.PI * hour / 24);
+            const adjustedLocalScore = localScore * (1 + gannFactor * 0.1);
+            const adjustedVisitorScore = visitorScore * (1 - gannFactor * 0.1);
+            
+            // Calcular diferencia
+            const scoreDifference = adjustedLocalScore - adjustedVisitorScore;
+            const totalScore = adjustedLocalScore + adjustedVisitorScore;
+            
+            // Determinar resultado
+            let prediction, confidence;
+            
+            if (Math.abs(scoreDifference) < totalScore * 0.05) {
+                // Empate (diferencia menor al 5%)
+                prediction = 'draw';
+                confidence = 1 - (Math.abs(scoreDifference) / totalScore);
+            } else if (scoreDifference > 0) {
+                // Victoria local
+                prediction = 'local';
+                confidence = scoreDifference / totalScore;
+            } else {
+                // Victoria visitante
+                prediction = 'visitor';
+                confidence = Math.abs(scoreDifference) / totalScore;
+            }
+            
+            return {
+                prediction: prediction,
+                confidence: Math.min(Math.max(confidence, 0.1), 0.95), // Entre 10% y 95%
+                localScore: adjustedLocalScore,
+                visitorScore: adjustedVisitorScore,
+                factors: {
+                    physicalAdvantage: localAnalysis.avgPhysical > visitorAnalysis.avgPhysical ? 'local' : 
+                                     (localAnalysis.avgPhysical < visitorAnalysis.avgPhysical ? 'visitor' : 'equal'),
+                    rodinAdvantage: localAnalysis.avgRodin > visitorAnalysis.avgRodin ? 'local' : 
+                                   (localAnalysis.avgRodin < visitorAnalysis.avgRodin ? 'visitor' : 'equal'),
+                    astralAdvantage: localAnalysis.avgAstral > visitorAnalysis.avgAstral ? 'local' : 
+                                    (localAnalysis.avgAstral < visitorAnalysis.avgAstral ? 'visitor' : 'equal'),
+                    phiAdvantage: localAnalysis.avgPhi > visitorAnalysis.avgPhi ? 'local' : 
+                                 (localAnalysis.avgPhi < visitorAnalysis.avgPhi ? 'visitor' : 'equal')
+                }
+            };
+        }
+
+        // FUNCIÓN PRINCIPAL PARA EJECUTAR PREDICCIONES
+        function runAllPredictions() {
+            console.log("Ejecutando predicciones...");
+            
+            const matchDate = document.getElementById('matchDate').value;
+            const hour = parseInt(document.getElementById('hour').value) || 16;
+            const minute = parseInt(document.getElementById('minute').value) || 0;
+            
+            const matchDateTime = DateTime.fromISO(matchDate).set({ hour: hour, minute: minute });
+            document.getElementById('analysisDate').textContent = matchDateTime.toLocaleString(DateTime.DATETIME_FULL);
+            
+            predictions = [];
+            
+            // Procesar cada juego
+            Object.keys(games).sort((a, b) => parseInt(a) - parseInt(b)).forEach(gameNumber => {
+                const gamePlayers = games[gameNumber];
+                
+                // Separar equipos (el primer equipo es local, el segundo es visitante)
+                const teams = [...new Set(gamePlayers.map(p => p.equipo))];
+                if (teams.length !== 2) return; // Saltar si no hay exactamente 2 equipos
+                
+                const localTeam = teams[0];
+                const visitorTeam = teams[1];
+                
+                const localPlayers = gamePlayers.filter(p => p.equipo === localTeam);
+                const visitorPlayers = gamePlayers.filter(p => p.equipo === visitorTeam);
+                
+                // Analizar equipos
+                const localAnalysis = analyzeTeam(localPlayers, matchDateTime);
+                const visitorAnalysis = analyzeTeam(visitorPlayers, matchDateTime);
+                
+                // Predecir resultado
+                const prediction = predictMatch(localAnalysis, visitorAnalysis, matchDateTime);
+                
+                if (prediction) {
+                    predictions.push({
+                        gameNumber: gameNumber,
+                        localTeam: localTeam,
+                        visitorTeam: visitorTeam,
+                        localPlayers: localPlayers.length,
+                        visitorPlayers: visitorPlayers.length,
+                        localAnalysis: localAnalysis,
+                        visitorAnalysis: visitorAnalysis,
+                        prediction: prediction,
+                        matchDateTime: matchDateTime
+                    });
+                }
+            });
+            
+            // Actualizar estadísticas
+            updateStatistics();
+            
+            // Mostrar predicciones
+            displayPredictions();
+        }
+
+        // FUNCIÓN PARA ACTUALIZAR ESTADÍSTICAS
+        function updateStatistics() {
+            let localWins = 0, draws = 0, visitorWins = 0;
+            let totalConfidence = 0;
+            
+            predictions.forEach(pred => {
+                if (pred.prediction.prediction === 'local') localWins++;
+                else if (pred.prediction.prediction === 'draw') draws++;
+                else if (pred.prediction.prediction === 'visitor') visitorWins++;
+                
+                totalConfidence += pred.prediction.confidence;
+            });
+            
+            const totalPredictions = predictions.length;
+            const localPercent = totalPredictions > 0 ? Math.round((localWins / totalPredictions) * 100) : 0;
+            const drawPercent = totalPredictions > 0 ? Math.round((draws / totalPredictions) * 100) : 0;
+            const visitorPercent = totalPredictions > 0 ? Math.round((visitorWins / totalPredictions) * 100) : 0;
+            const avgConfidence = totalPredictions > 0 ? Math.round((totalConfidence / totalPredictions) * 100) : 0;
+            
+            document.getElementById('localWins').textContent = localWins;
+            document.getElementById('draws').textContent = draws;
+            document.getElementById('visitorWins').textContent = visitorWins;
+            document.getElementById('localPercent').textContent = `${localPercent}%`;
+            document.getElementById('drawPercent').textContent = `${drawPercent}%`;
+            document.getElementById('visitorPercent').textContent = `${visitorPercent}%`;
+            document.getElementById('avgConfidence').textContent = `${avgConfidence}%`;
+            document.getElementById('accuracyRate').textContent = `${avgConfidence}%`;
+        }
+
+        // FUNCIÓN PARA MOSTRAR PREDICCIONES
+        function displayPredictions() {
+            const container = document.getElementById('predictionsContainer');
+            container.innerHTML = '';
+            
+            predictions.forEach(pred => {
+                const predClass = `pred-${pred.prediction.prediction}-win`;
+                const resultText = 
+                    pred.prediction.prediction === 'local' ? `VICTORIA ${pred.localTeam}` :
+                    pred.prediction.prediction === 'visitor' ? `VICTORIA ${pred.visitorTeam}` :
+                    'EMPATE';
+                
+                const confidencePercent = Math.round(pred.prediction.confidence * 100);
+                const confidenceClass = 
+                    confidencePercent >= 70 ? 'high-confidence' :
+                    confidencePercent >= 50 ? 'medium-confidence' : 'low-confidence';
+                
+                // Calcular porcentajes para las barras
+                const totalScore = pred.prediction.localScore + pred.prediction.visitorScore;
+                const localPercent = (pred.prediction.localScore / totalScore) * 100;
+                const visitorPercent = (pred.prediction.visitorScore / totalScore) * 100;
+                const drawPercent = 100 - Math.abs(localPercent - visitorPercent);
+                
+                const predictionCard = document.createElement('div');
+                predictionCard.className = 'prediction-card';
+                predictionCard.innerHTML = `
+                    <div class="prediction-header">
+                        <div class="game-info">
+                            <div class="game-number">Juego ${pred.gameNumber}</div>
+                            <div class="match-teams">
+                                <div class="team local-team">
+                                    🏠 ${pred.localTeam}
+                                    <small>(${pred.localPlayers} jugadores)</small>
+                                </div>
+                                <div class="vs">VS</div>
+                                <div class="team visitor-team">
+                                    ✈️ ${pred.visitorTeam}
+                                    <small>(${pred.visitorPlayers} jugadores)</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="${confidenceClass} confidence-badge">
+                            ${confidencePercent}% Confianza
+                        </div>
+                    </div>
+                    
+                    <div class="prediction-result ${predClass}">
+                        <div>🎯 PREDICCIÓN: ${resultText}</div>
+                    </div>
+                    
+                    <div class="score-breakdown">
+                        <div>📊 Distribución de Probabilidad:</div>
+                        <div class="score-bars">
+                            <div class="local-bar" style="width: ${localPercent}%"></div>
+                            <div class="draw-bar" style="width: ${drawPercent}%"></div>
+                            <div class="visitor-bar" style="width: ${visitorPercent}%"></div>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-top: 10px; font-size: 0.9rem;">
+                            <div>Local: ${Math.round(localPercent)}%</div>
+                            <div>Empate: ${Math.round(drawPercent)}%</div>
+                            <div>Visita: ${Math.round(visitorPercent)}%</div>
+                        </div>
+                    </div>
+                    
+                    <div class="factors-grid">
+                        <div class="factor-item">
+                            <div class="factor-name">Biorritmo Físico</div>
+                            <div class="factor-value ${pred.prediction.factors.physicalAdvantage === 'local' ? 'positive-factor' : pred.prediction.factors.physicalAdvantage === 'visitor' ? 'negative-factor' : 'neutral-factor'}">
+                                ${pred.prediction.factors.physicalAdvantage === 'local' ? '✔️ Local' : 
+                                  pred.prediction.factors.physicalAdvantage === 'visitor' ? '✔️ Visita' : '⚖️ Igual'}
+                            </div>
+                        </div>
+                        <div class="factor-item">
+                            <div class="factor-name">Número Rodin</div>
+                            <div class="factor-value ${pred.prediction.factors.rodinAdvantage === 'local' ? 'positive-factor' : pred.prediction.factors.rodinAdvantage === 'visitor' ? 'negative-factor' : 'neutral-factor'}">
+                                ${pred.prediction.factors.rodinAdvantage === 'local' ? '✔️ Local' : 
+                                  pred.prediction.factors.rodinAdvantage === 'visitor' ? '✔️ Visita' : '⚖️ Igual'}
+                            </div>
+                        </div>
+                        <div class="factor-item">
+                            <div class="factor-name">Compatibilidad Astral</div>
+                            <div class="factor-value ${pred.prediction.factors.astralAdvantage === 'local' ? 'positive-factor' : pred.prediction.factors.astralAdvantage === 'visitor' ? 'negative-factor' : 'neutral-factor'}">
+                                ${pred.prediction.factors.astralAdvantage === 'local' ? '✔️ Local' : 
+                                  pred.prediction.factors.astralAdvantage === 'visitor' ? '✔️ Visita' : '⚖️ Igual'}
+                            </div>
+                        </div>
+                        <div class="factor-item">
+                            <div class="factor-name">Coeficiente Phi</div>
+                            <div class="factor-value ${pred.prediction.factors.phiAdvantage === 'local' ? 'positive-factor' : pred.prediction.factors.phiAdvantage === 'visitor' ? 'negative-factor' : 'neutral-factor'}">
+                                ${pred.prediction.factors.phiAdvantage === 'local' ? '✔️ Local' : 
+                                  pred.prediction.factors.phiAdvantage === 'visitor' ? '✔️ Visita' : '⚖️ Igual'}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div style="margin-top: 20px; font-size: 0.9rem; color: #94a3b8;">
+                        <strong>📅 Fecha del partido:</strong> ${pred.matchDateTime.toLocaleString(DateTime.DATETIME_MED)}
+                    </div>
+                `;
+                
+                container.appendChild(predictionCard);
+            });
+        }
+
+        // FUNCIÓN PARA DESCARGAR PREDICCIONES
+        function downloadPredictions() {
+            if (predictions.length === 0) {
+                alert('Primero ejecuta las predicciones');
+                return;
+            }
+            
+            const csvData = [
+                ['Juego', 'Equipo Local', 'Equipo Visitante', 'Predicción', 'Confianza', 
+                 'Prob. Local', 'Prob. Empate', 'Prob. Visita', 'Fecha Partido']
+            ];
+            
+            predictions.forEach(pred => {
+                const totalScore = pred.prediction.localScore + pred.prediction.visitorScore;
+                const localPercent = (pred.prediction.localScore / totalScore) * 100;
+                const visitorPercent = (pred.prediction.visitorScore / totalScore) * 100;
+                const drawPercent = 100 - Math.abs(localPercent - visitorPercent);
+                
+                const predictionText = 
+                    pred.prediction.prediction === 'local' ? `Victoria ${pred.localTeam}` :
+                    pred.prediction.prediction === 'visitor' ? `Victoria ${pred.visitorTeam}` : 'Empate';
+                
+                csvData.push([
+                    pred.gameNumber,
+                    pred.localTeam,
+                    pred.visitorTeam,
+                    predictionText,
+                    `${Math.round(pred.prediction.confidence * 100)}%`,
+                    `${Math.round(localPercent)}%`,
+                    `${Math.round(drawPercent)}%`,
+                    `${Math.round(visitorPercent)}%`,
+                    pred.matchDateTime.toLocaleString(DateTime.DATETIME_MED)
+                ]);
+            });
+            
+            const csvContent = csvData.map(row => row.join(',')).join('\n');
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            
+            link.href = URL.createObjectURL(blob);
+            link.download = `predicciones_futbol_${DateTime.now().toFormat('yyyy-MM-dd_HHmm')}.csv`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
+        }
+
+        // FUNCIÓN PARA MOSTRAR TABS
+        function showTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            document.getElementById(`${tabName}-tab`).classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        // INICIALIZAR SISTEMA
+        window.onload = function() {
+            loadData();
+            // Ejecutar predicciones automáticamente
+            setTimeout(runAllPredictions, 500);
+        };
+    </script>
+</body>
+</html>
